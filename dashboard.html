@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SOC Threat Monitoring Dashboard</title>
+<style>
+:root{
+  --bg:#0a0e14; --panel:#0f1620; --panel2:#121a26; --border:#1e2a38;
+  --text:#d7e2ea; --muted:#7c8ea3; --accent:#00e5a0; --accent2:#3ba8ff;
+  --crit:#ff4d5e; --high:#ff9f43; --med:#ffd23f; --low:#3ba8ff; --info:#7c8ea3;
+  --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+header{
+  position:sticky; top:0; z-index:10;
+  padding:14px 20px; padding-top:calc(14px + env(safe-area-inset-top,0px));
+  background:linear-gradient(180deg,#0d1420,#0a0e14);
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);animation:pulse 1.6s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.brand h1{font-size:16px;margin:0;letter-spacing:.5px;font-family:var(--mono);}
+.brand small{color:var(--muted);display:block;font-size:11px;}
+.status-pill{
+  font-family:var(--mono); font-size:11px; padding:6px 10px; border-radius:20px;
+  background:rgba(0,229,160,.08); border:1px solid rgba(0,229,160,.35); color:var(--accent);
+}
+main{max-width:1400px;margin:0 auto;padding:18px;}
+.grid-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+.stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
+.stat-value{font-family:var(--mono);font-size:26px;font-weight:600;margin-top:4px;}
+.stat-value.crit{color:var(--crit);} .stat-value.high{color:var(--high);}
+.stat-value.med{color:var(--med);} .stat-value.ok{color:var(--accent);}
+.grid-main{display:grid;grid-template-columns:2fr 1fr;gap:14px;}
+@media(max-width:900px){.grid-main{grid-template-columns:1fr;}}
+.panel-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.panel-title h2{font-size:13px;margin:0;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:600;}
+.legend{display:flex;gap:10px;font-size:11px;color:var(--muted);font-family:var(--mono);}
+.legend span{display:inline-flex;align-items:center;gap:4px;}
+.legend i{width:8px;height:8px;border-radius:50%;display:inline-block;}
+canvas{width:100%;display:block;}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;}
+thead th{text-align:left;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:6px 8px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel);}
+tbody td{padding:7px 8px;border-bottom:1px solid rgba(30,42,56,.6);vertical-align:middle;}
+tbody tr:hover{background:rgba(59,168,255,.05);}
+.sev{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.5px;display:inline-block;}
+.sev.critical{background:rgba(255,77,94,.15);color:var(--crit);border:1px solid rgba(255,77,94,.4);}
+.sev.high{background:rgba(255,159,67,.15);color:var(--high);border:1px solid rgba(255,159,67,.4);}
+.sev.medium{background:rgba(255,210,63,.15);color:var(--med);border:1px solid rgba(255,210,63,.4);}
+.sev.low{background:rgba(59,168,255,.15);color:var(--low);border:1px solid rgba(59,168,255,.4);}
+.table-wrap{max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:8px;}
+.toolbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+select,input[type=text]{
+  background:var(--panel2);border:1px solid var(--border);color:var(--text);
+  padding:7px 10px;border-radius:6px;font-family:var(--mono);font-size:12px;
+}
+input[type=text]{flex:1;min-width:140px;}
+.list-item{display:flex;justify-content:space-between;align-items:center;padding:9px 4px;border-bottom:1px solid rgba(30,42,56,.6);font-family:var(--mono);font-size:12px;}
+.list-item:last-child{border-bottom:none;}
+.badge{padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;}
+.badge.up{background:rgba(255,77,94,.15);color:var(--crit);}
+.map-wrap{position:relative;background:radial-gradient(ellipse at center,#0f1a26 0%,#0a0e14 80%);border-radius:8px;overflow:hidden;}
+.log-line{font-family:var(--mono);font-size:11.5px;padding:3px 0;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.log-line b{color:var(--text);}
+footer{text-align:center;color:var(--muted);font-size:11px;padding:20px;font-family:var(--mono);}
+::-webkit-scrollbar{width:8px;height:8px;} ::-webkit-scrollbar-thumb{background:#1e2a38;border-radius:4px;}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#0a0e14;}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot"></span>
+    <div>
+      <h1>SOC :: THREAT MONITORING DASHBOARD</h1>
+      <small>Simulated live feed &middot; local session only</small>
+    </div>
+  </div>
+  <div class="status-pill" id="clock">MONITORING ACTIVE</div>
+</header>
+
+<main>
+
+  <div class="grid-stats">
+    <div class="card"><div class="stat-label">Active Alerts</div><div class="stat-value crit" id="statAlerts">0</div></div>
+    <div class="card"><div class="stat-label">Critical (24h)</div><div class="stat-value crit" id="statCritical">0</div></div>
+    <div class="card"><div class="stat-label">Blocked IPs</div><div class="stat-value high" id="statBlocked">0</div></div>
+    <div class="card"><div class="stat-label">Events / sec</div><div class="stat-value ok" id="statEps">0</div></div>
+    <div class="card"><div class="stat-label">Systems Online</div><div class="stat-value ok" id="statSystems">--/--</div></div>
+    <div class="card"><div class="stat-label">Mean Time to Detect</div><div class="stat-value med" id="statMttd">--</div></div>
+  </div>
+
+  <div class="grid-main">
+    <div>
+      <div class="card" style="margin-bottom:14px;">
+        <div class="panel-title">
+          <h2>Event Volume (last 60s)</h2>
+          <div class="legend">
+            <span><i style="background:var(--accent2)"></i>Network</span>
+            <span><i style="background:var(--high)"></i>Auth</span>
+            <span><i style="background:var(--crit)"></i>Malware</span>
+          </div>
+        </div>
+        <canvas id="chart" height="160"></canvas>
+      </div>
+
+      <div class="card">
+        <div class="panel-title"><h2>Live Alert Feed</h2></div>
+        <div class="toolbar">
+          <select id="filterSev">
+            <option value="all">All severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <input type="text" id="searchBox" placeholder="Filter by IP, type, or asset...">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Severity</th><th>Type</th><th>Source IP</th><th>Target Asset</th><th>Status</th></tr></thead>
+            <tbody id="alertBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:14px;">
+        <div class="panel-title"><h2>Real IP Lookup <span style="font-weight:400;color:var(--muted);font-size:10px;">(AbuseIPDB / VirusTotal)</span></h2></div>
+        <div class="toolbar">
+          <input type="text" id="realIpInput" placeholder="e.g. 8.8.8.8" value="8.8.8.8">
+          <button id="realIpBtn" style="background:var(--accent);border:none;color:#031b12;font-weight:700;padding:7px 14px;border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;">Check</button>
+        </div>
+        <div id="realIpResult" style="font-family:var(--mono);font-size:12px;color:var(--muted);"></div>
+        <div id="focusBanner" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(0,229,160,.08);border:1px solid rgba(0,229,160,.3);border-radius:6px;font-family:var(--mono);font-size:11px;color:var(--accent);justify-content:space-between;align-items:center;">
+          <span id="focusBannerText"></span>
+          <button id="clearFocusBtn" style="background:none;border:1px solid var(--accent);color:var(--accent);padding:3px 8px;border-radius:5px;font-family:var(--mono);font-size:10px;cursor:pointer;">Show all IPs</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="panel-title"><h2>Top Attack Sources</h2></div>
+        <div id="topSources"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="panel-title"><h2>Attack Vector Breakdown</h2></div>
+        <canvas id="donut" height="180"></canvas>
+        <div id="donutLegend" style="margin-top:8px;font-family:var(--mono);font-size:11px;"></div>
+      </div>
+
+      <div class="card">
+        <div class="panel-title"><h2>Raw Event Log</h2></div>
+        <div id="rawLog" style="max-height:220px;overflow:auto;"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+
+<script>
+// ---------- Config ----------
+const SEVERITIES = ['critical','high','medium','low'];
+const SEV_WEIGHT = {critical:4, high:3, medium:2, low:1};
+const TYPES = ['Brute Force Login','Port Scan','SQL Injection Attempt','Malware Signature Match','DDoS Pattern','Privilege Escalation','Suspicious DNS Query','Phishing Link Clicked','Ransomware Behavior','Unauthorized USB Access','Lateral Movement Detected','C2 Beacon Detected'];
+const ASSETS = ['WEB-SRV-01','DB-SRV-PROD','DC-AUTH-01','VPN-GATEWAY','FIN-WORKSTATION-14','HR-LAPTOP-22','MAIL-SRV-02','FILE-SRV-03','DEV-BUILD-NODE','CLOUD-VM-EU-1'];
+const COUNTRIES = ['RU','CN','US','BR','NG','IN','VN','KR','DE','IR','UA','NL'];
+const STATUSES = ['Investigating','Contained','Blocked','Monitoring','Escalated'];
+
+function randIP(){return `${rnd(1,223)}.${rnd(0,255)}.${rnd(0,255)}.${rnd(1,254)}`;}
+function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function choice(arr){return arr[rnd(0,arr.length-1)];}
+function weightedSev(){
+  const r = Math.random();
+  if(r<0.08) return 'critical';
+  if(r<0.28) return 'high';
+  if(r<0.60) return 'medium';
+  return 'low';
+}
+
+let alerts = [];
+let blockedIPs = new Set();
+let focusIP = null; // when set, Live Feed / Top Sources / Donut / Raw Log show data only for this IP
+let epsHistory = {network:[], auth:[], malware:[]};
+const MAXPOINTS = 60;
+for(let i=0;i<MAXPOINTS;i++){epsHistory.network.push(0);epsHistory.auth.push(0);epsHistory.malware.push(0);}
+
+function genAlert(){
+  const sev = weightedSev();
+  const type = choice(TYPES);
+  const ip = randIP();
+  if(sev==='critical' || sev==='high'){ if(Math.random()<0.6) blockedIPs.add(ip); }
+  return {
+    time: new Date(),
+    sev, type, ip,
+    country: choice(COUNTRIES),
+    asset: choice(ASSETS),
+    status: sev==='critical' ? choice(['Investigating','Escalated','Blocked']) : choice(STATUSES)
+  };
+}
+
+function fmtTime(d){return d.toTimeString().slice(0,8);}
+
+function currentAlertSet(){
+  return focusIP ? alerts.filter(a=>a.ip===focusIP) : alerts;
+}
+
+function render(){
+  const scope = currentAlertSet();
+  // stats
+  const critCount = scope.filter(a=>a.sev==='critical').length;
+  document.getElementById('statAlerts').textContent = scope.length;
+  document.getElementById('statCritical').textContent = critCount;
+  document.getElementById('statBlocked').textContent = focusIP ? (blockedIPs.has(focusIP)?1:0) : blockedIPs.size;
+  document.getElementById('statSystems').textContent = `${rnd(46,48)}/48`;
+  document.getElementById('statMttd').textContent = (Math.random()*3+1.2).toFixed(1)+'m';
+
+  renderTable();
+  renderTopSources();
+  renderDonut();
+  renderRawLog();
+}
+
+function renderTable(){
+  const sevFilter = document.getElementById('filterSev').value;
+  const q = document.getElementById('searchBox').value.toLowerCase();
+  const body = document.getElementById('alertBody');
+  const rows = currentAlertSet().slice(0,150).filter(a=>{
+    if(sevFilter!=='all' && a.sev!==sevFilter) return false;
+    if(q && !(a.ip.includes(q) || a.type.toLowerCase().includes(q) || a.asset.toLowerCase().includes(q))) return false;
+    return true;
+  }).slice(0,60);
+  body.innerHTML = rows.map(a=>`
+    <tr>
+      <td>${fmtTime(a.time)}</td>
+      <td><span class="sev ${a.sev}">${a.sev.toUpperCase()}</span></td>
+      <td>${a.type}</td>
+      <td>${a.ip} <span style="color:var(--muted)">(${a.country})</span></td>
+      <td>${a.asset}</td>
+      <td>${a.status}</td>
+    </tr>`).join('');
+}
+
+function renderTopSources(){
+  const counts = {};
+  currentAlertSet().forEach(a=>{counts[a.ip]=(counts[a.ip]||0)+SEV_WEIGHT[a.sev];});
+  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const el = document.getElementById('topSources');
+  if(top.length===0){el.innerHTML='<div style="color:var(--muted);font-family:var(--mono);font-size:12px;">No data yet...</div>';return;}
+  const max = top[0][1];
+  el.innerHTML = top.map(([ip,score])=>`
+    <div class="list-item">
+      <span>${ip}</span>
+      <span class="badge up">${score}</span>
+    </div>
+    <div style="height:4px;background:#141d29;border-radius:2px;margin:-4px 0 6px;overflow:hidden;">
+      <div style="height:100%;width:${(score/max*100).toFixed(0)}%;background:var(--crit);"></div>
+    </div>`).join('');
+}
+
+function renderDonut(){
+  const cats = {'Network':0,'Auth':0,'Malware':0,'Web App':0,'Other':0};
+  currentAlertSet().forEach(a=>{
+    if(/Port Scan|DDoS|Lateral|C2/.test(a.type)) cats['Network']++;
+    else if(/Brute Force|Privilege|USB/.test(a.type)) cats['Auth']++;
+    else if(/Malware|Ransomware/.test(a.type)) cats['Malware']++;
+    else if(/SQL|Phishing|DNS/.test(a.type)) cats['Web App']++;
+    else cats['Other']++;
+  });
+  const total = Object.values(cats).reduce((a,b)=>a+b,0) || 1;
+  const colors = ['#3ba8ff','#ff9f43','#ff4d5e','#00e5a0','#7c8ea3'];
+  const canvas = document.getElementById('donut');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio||1;
+  const w = canvas.clientWidth, h = 180;
+  canvas.width = w*dpr; canvas.height = h*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  const cx=w/2, cy=h/2, rOuter=70, rInner=42;
+  let start=-Math.PI/2;
+  Object.values(cats).forEach((v,i)=>{
+    const angle = (v/total)*Math.PI*2;
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,rOuter,start,start+angle);
+    ctx.closePath();
+    ctx.fillStyle=colors[i];
+    ctx.fill();
+    start+=angle;
+  });
+  ctx.globalCompositeOperation='destination-out';
+  ctx.beginPath(); ctx.arc(cx,cy,rInner,0,Math.PI*2); ctx.fill();
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='#d7e2ea'; ctx.font='600 14px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(total, cx, cy-6);
+  ctx.fillStyle='#7c8ea3'; ctx.font='10px monospace';
+  ctx.fillText('EVENTS', cx, cy+10);
+
+  const legend = document.getElementById('donutLegend');
+  legend.innerHTML = Object.keys(cats).map((k,i)=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;"><i style="width:8px;height:8px;background:${colors[i]};display:inline-block;border-radius:2px;"></i>${k} ${cats[k]}</span>`).join('');
+}
+
+function renderRawLog(){
+  const el = document.getElementById('rawLog');
+  const recent = currentAlertSet().slice(0,25);
+  el.innerHTML = recent.map(a=>`<div class="log-line">[${fmtTime(a.time)}] <b>${a.sev.toUpperCase()}</b> ${a.type} src=${a.ip} dst=${a.asset}</div>`).join('');
+}
+
+function drawLineChart(){
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio||1;
+  const w = canvas.clientWidth, h = 160;
+  canvas.width = w*dpr; canvas.height=h*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  // grid
+  ctx.strokeStyle='rgba(30,42,56,.7)'; ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y = (h/4)*i;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+  }
+  const series = [
+    {data:epsHistory.network,color:'#3ba8ff'},
+    {data:epsHistory.auth,color:'#ff9f43'},
+    {data:epsHistory.malware,color:'#ff4d5e'}
+  ];
+  const maxVal = Math.max(5,...series.flatMap(s=>s.data));
+  series.forEach(s=>{
+    ctx.beginPath();
+    s.data.forEach((v,i)=>{
+      const x = (w/(MAXPOINTS-1))*i;
+      const y = h - (v/maxVal)*h*0.9 - 4;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.strokeStyle = s.color; ctx.lineWidth=2; ctx.stroke();
+  });
+}
+
+function tick(){
+  const n = rnd(0,3);
+  for(let i=0;i<n;i++){
+    const a = genAlert();
+    alerts.unshift(a);
+  }
+  if(alerts.length>500) alerts.length = 500;
+
+  epsHistory.network.push(rnd(0,8)); epsHistory.network.shift();
+  epsHistory.auth.push(rnd(0,6)); epsHistory.auth.shift();
+  epsHistory.malware.push(rnd(0,3)); epsHistory.malware.shift();
+  document.getElementById('statEps').textContent =
+    (epsHistory.network.at(-1)+epsHistory.auth.at(-1)+epsHistory.malware.at(-1));
+
+  drawLineChart();
+  render();
+}
+
+document.getElementById('filterSev').addEventListener('change', renderTable);
+document.getElementById('searchBox').addEventListener('input', renderTable);
+
+// ---------- Real IP Lookup (calls Flask backend /api/lookup) ----------
+
+function setFocus(ip){
+  focusIP = ip;
+  const banner = document.getElementById('focusBanner');
+  const text = document.getElementById('focusBannerText');
+  if(ip){
+    banner.style.display = 'flex';
+    text.textContent = `Showing Live Feed / Top Sources / Attack Breakdown / Raw Log for ${ip} only`;
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+function clearFocus(){
+  setFocus(null);
+  render();
+}
+
+// Builds a small set of realistic, clearly-labeled events for the exact
+// IP that was looked up, using the REAL severity/geo/abuse data returned
+// by the backend — so every section of the dashboard (feed, top sources,
+// donut, raw log) reflects information about that specific IP.
+function buildEventsForRealIP(data){
+  const geo = data.geo || {};
+  const abuse = data.abuseipdb || {};
+  const country = geo.country_code || abuse.country_code || '??';
+  const asset = 'MANUAL-CHECK';
+  const now = new Date();
+
+  if(data.is_local){
+    return [{
+      time: now, sev: data.severity, type: 'Local Network Device Check',
+      ip: data.ip, country: '--', asset: 'LOCAL-NETWORK', status: 'Investigated'
+    }];
+  }
+
+  // Spread a few related event "types" across categories so the Attack
+  // Vector donut and Raw Log have something meaningful to show for this
+  // one IP, all carrying the real severity/geo that came back from the API.
+  const relatedTypes = ['Real IP Lookup', 'Suspicious DNS Query', 'Port Scan'];
+  if(abuse.available && abuse.abuse_confidence_score >= 40) relatedTypes.push('Malware Signature Match');
+  if(geo.is_proxy_or_vpn) relatedTypes.push('VPN/Proxy Detected');
+  if(geo.is_hosting_datacenter) relatedTypes.push('Datacenter Source Flagged');
+
+  return relatedTypes.map((type, i) => ({
+    time: new Date(now.getTime() - i*1000),
+    sev: data.severity, type, ip: data.ip, country, asset,
+    status: data.severity === 'critical' ? 'Escalated' : (data.severity === 'high' ? 'Investigating' : 'Monitoring')
+  }));
+}
+
+async function checkRealIP(){
+  const ip = document.getElementById('realIpInput').value.trim();
+  const box = document.getElementById('realIpResult');
+
+  if(!ip){ box.innerHTML = '<span style="color:var(--crit)">Please enter an IP address first.</span>'; return; }
+
+  // Most common cause of a 404 here: the file was opened directly
+  // (file://...) instead of being served by the Flask app.
+  if(window.location.protocol === 'file:'){
+    box.innerHTML = `<span style="color:var(--crit)">This page was opened directly as a file, so the backend API can't be reached (404).</span><br>
+      <span style="color:var(--muted)">Run <b>python app.py</b> in a terminal, then open <b>http://127.0.0.1:5000/</b> in your browser instead of double-clicking the HTML file.</span>`;
+    return;
+  }
+
+  box.innerHTML = 'Checking...';
+  let res;
+  try{
+    res = await fetch(`/api/lookup?ip=${encodeURIComponent(ip)}`);
+  }catch(networkErr){
+    box.innerHTML = `<span style="color:var(--crit)">Could not reach the server.</span><br>
+      <span style="color:var(--muted)">Make sure the Flask server is running (python app.py) and you are on http://127.0.0.1:5000/.</span>`;
+    return;
+  }
+
+  if(res.status === 404){
+    box.innerHTML = `<span style="color:var(--crit)">404 Not Found — the /api/lookup route does not exist on this server.</span><br>
+      <span style="color:var(--muted)">This usually means an older/different app.py is running, or the server needs to be restarted after updating the code. Stop the server (Ctrl+C) and run <b>python app.py</b> again from the soc-project folder.</span>`;
+    return;
+  }
+
+  let data;
+  try{
+    data = await res.json();
+  }catch(parseErr){
+    box.innerHTML = `<span style="color:var(--crit)">The server sent an unexpected response (status ${res.status}).</span>`;
+    return;
+  }
+
+  if(!res.ok){
+    box.innerHTML = `<span style="color:var(--crit)">${data.error || ('Error: HTTP '+res.status)}</span>`;
+    return;
+  }
+
+  const sevColor = {critical:'var(--crit)',high:'var(--high)',medium:'var(--med)',low:'var(--low)'}[data.severity];
+  const geo = data.geo || {available:false}, abuse = data.abuseipdb, vt = data.virustotal;
+
+  let html = `<div style="margin-bottom:6px;"><span class="sev ${data.severity}">${data.severity.toUpperCase()}</span> <b style="color:var(--text)">${data.ip}</b></div>`;
+
+  // Private/local network address (router, phone, laptop, camera, etc.)
+  // — public services can't look these up, so show a clear explanation
+  // instead of an "unavailable" or error message.
+  if(data.is_local && data.local_info){
+    html += `<div style="margin-bottom:4px;"><b style="color:var(--text)">${data.local_info.kind}</b></div>`;
+    html += `<div style="color:var(--muted);line-height:1.6;">${data.local_info.explanation}</div>`;
+    box.innerHTML = html;
+    buildEventsForRealIP(data).forEach(ev => alerts.unshift(ev));
+    setFocus(data.ip);
+    render();
+    return;
+  }
+
+  if(geo.available){
+    html += `${geo.city ? geo.city+', ' : ''}${geo.region ? geo.region+', ' : ''}${geo.country || 'Unknown'} &middot; ISP: ${geo.isp || 'Unknown'} &middot; Org: ${geo.org || 'Unknown'}<br>`;
+    html += `ASN: ${geo.asn || 'Unknown'} &middot; VPN/Proxy: ${geo.is_proxy_or_vpn ? 'Yes':'No'} &middot; Datacenter/Hosting: ${geo.is_hosting_datacenter ? 'Yes':'No'} &middot; Mobile: ${geo.is_mobile ? 'Yes':'No'}<br>`;
+  } else {
+    html += `<span style="color:var(--muted)">Geo/ISP info unavailable: ${geo.reason || 'unknown error'}</span><br>`;
+  }
+
+  if(abuse.available){
+    html += `AbuseIPDB score: <b style="color:${sevColor}">${abuse.abuse_confidence_score}%</b> &middot; Reports: ${abuse.total_reports} &middot; Tor: ${abuse.is_tor ? 'Yes':'No'}<br>`;
+  } else {
+    html += `<span style="color:var(--muted)">AbuseIPDB: ${abuse.reason}</span><br>`;
+  }
+
+  if(vt.available){
+    html += `VirusTotal: ${vt.malicious} malicious / ${vt.suspicious} suspicious / ${vt.harmless} harmless`;
+  } else {
+    html += `<span style="color:var(--muted)">VirusTotal: ${vt.reason}</span>`;
+  }
+  box.innerHTML = html;
+
+  // Feed real events for this exact IP into the alert stream, then focus
+  // every panel (Live Feed, Top Sources, Attack Breakdown, Raw Log) on it.
+  buildEventsForRealIP(data).forEach(ev => alerts.unshift(ev));
+  setFocus(data.ip);
+  document.getElementById('searchBox').value = '';
+  render();
+}
+document.getElementById('realIpBtn').addEventListener('click', checkRealIP);
+document.getElementById('realIpInput').addEventListener('keydown', e=>{ if(e.key==='Enter') checkRealIP(); });
+document.getElementById('clearFocusBtn').addEventListener('click', clearFocus);
+
+function updateClock(){
+  document.getElementById('clock').textContent = 'MONITORING ACTIVE \u2022 ' + new Date().toTimeString().slice(0,8);
+}
+setInterval(updateClock,1000); updateClock();
+
+// seed initial data
+for(let i=0;i<25;i++) alerts.push(genAlert());
+tick();
+setInterval(tick, 1800);
+window.addEventListener('resize', ()=>{drawLineChart(); renderDonut();});
+</script>
+</body>
+</html>
